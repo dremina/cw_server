@@ -14,13 +14,13 @@
 #define MAX 15
 #define NAME_SIZE 20
 
-pthread_mutex_t send_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct clients_description {
 	int index;
 	pthread_t thread_ID;
 	int sockfd;
-	char name[NAME_SIZE + 1];
+	//char name[NAME_SIZE + 1]; //добавить partner id
 } clients_t;
 
 clients_t clients_struct[MAX];
@@ -50,40 +50,42 @@ void send_to_all(clients_t *sender, char *buf)
 	int i;
 	for (i = 0; i < MAX; i++){
 		if (clients_struct[i].sockfd != -1){
-			printf("send:%d\n", sender->index);
+			printf("just send to__%d this string__%s\n", clients_struct[i].sockfd, buf);
 			write(clients_struct[i].sockfd, buf, BUF_SIZE);
 		}
 	}
 }
 			
-void *threads_handler(void * session_index)
+void *threads_handler(void * session_index) //только отправка сообщений всем подключившимся клиентам
 {
 	int recvd;
 	char buf[BUF_SIZE];
-	//int isconnected = 1;
 	int client_s;
 	client_s = *((int *)session_index);
 	printf("session %d__fd__%d\n", client_s, clients_struct[client_s].sockfd);
 	
 	bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
+	
 	while(1){
 		recvd = recv(clients_struct[client_s].sockfd, buf, sizeof(buf), 0);
-		/*if (!recvd){
-			continue;
-			//fprintf(stderr, "error recvd!!\n");
-			//isconnected = 0;
-			//close(clients_struct[client_s].sockfd);
-			//break;
-		//}*/
+		printf("%d", recvd);
+		
+		if (recvd <= 0){
+			fprintf(stderr, "error recvd < 0!!!\n");
+			break;
+		}	
 		if (recvd > 0){
-			printf("got it__%s\n", buf);
-			pthread_mutex_lock(&send_mutex);
+			printf("\n");
+			printf("got it__%s__from__%d\n", buf, clients_struct[client_s].sockfd);
+			pthread_mutex_lock(&mutex);
 			send_to_all(&clients_struct[client_s], buf);
-			pthread_mutex_unlock(&send_mutex);
+			pthread_mutex_unlock(&mutex);
 		}
 		bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
 	}
+	
 		close(clients_struct[client_s].sockfd);
+		clients_struct[client_s].sockfd = -1;
 		pthread_exit(NULL);		
 }
 
@@ -122,15 +124,7 @@ int main(int argc, char *argv[])
 		printf("listen () fail\n");
 		exit(1);
 	} 
-	/*connection = accept(sock, (struct sockaddr *)&client, &len);
-	printf("we got client: IP %s\n", inet_ntoa(client.sin_addr));
-	if (connection < 0){
-		printf("accept() fail\n");
-		exit(1);
-	}	
-	read(connection, &ch, sizeof(ch)); 
-	printf("client sent me  %s\n", ch);
-	write(connection, &buf, 4);*/
+	
 	initial_sessions();
 	while(1){
 		cur_index = search_availiable();
@@ -141,13 +135,13 @@ int main(int argc, char *argv[])
 			if (pthread_create(&(clients_struct[cur_index].thread_ID), NULL, 
 				&threads_handler, &(clients_struct[cur_index].index)) > 0){
 				printf("pthread_create() error!\n");
-				exit(1);
+				break;
 			}
 		} else {
 			printf("accept() error!\n");
-			exit(1);
+			break;
 		}
-		sleep(3);
+		//sleep(3);
 	}
 	close(connection);
 	close(sock);
