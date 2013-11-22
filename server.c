@@ -9,6 +9,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #define BUF_SIZE 1024
 #define MAX 15
@@ -20,7 +21,7 @@ typedef struct clients_description {
 	int index;
 	pthread_t thread_ID;
 	int sockfd;
-	//char name[NAME_SIZE + 1]; //добавить partner id
+	int partner_ID;
 } clients_t;
 
 clients_t clients_struct[MAX];
@@ -31,10 +32,11 @@ void initial_sessions()
 	for (i = 0; i < MAX; i++){
 		clients_struct[i].index = i;
 		clients_struct[i].sockfd = -1;
+		clients_struct[i].partner_ID = -1;
 	}
 }
 
-int search_availiable()
+int search_available()
 {
 	int i;
 	for (i = 0; i < MAX; i++){
@@ -44,7 +46,7 @@ int search_availiable()
 	}
 	return -1;
 }
-
+/*
 void send_to_all(clients_t *sender, char *buf)
 {
 	int i;
@@ -55,18 +57,61 @@ void send_to_all(clients_t *sender, char *buf)
 		}
 	}
 }
+*/
+int list_send(clients_t *my_client)
+{
+	int save_all;
+	int i, len, count = 0;
+	char buf_list[BUF_SIZE];
+	save_all = open("save", O_WRONLY);
+	for (i = 0; i < MAX; i++){
+		if (clients_struct[i].sockfd != -1 && clients_struct[i].partner_ID == -1 &&
+		    my_client->index != i){
+				len = sprintf(buf_list, "You can join: %d\n", i);
+				write(save_all, (void *)buf_list, len);
+				bzero((char *)buf_list, sizeof(buf_list[0]) * BUF_SIZE);
+				count++;
+		}
+	}
+	close(save_all);
+	if (count == 0){
+		len = sprintf(buf_list, "There is no available connection\n");
+		send(my_client->sockfd, buf_list, len, 0);
+		return 1;
+	}
+	save_all = open("save", O_RDONLY);
+	len = read(save_all, (void *)buf_list, len * count);
+	send(my_client->sockfd, buf_list, len, 0);
+	close(save_all);
+	return 0;
+}
 			
 void *threads_handler(void * session_index) //только отправка сообщений всем подключившимся клиентам
 {
-	int recvd;
+	int recvd ;
 	char buf[BUF_SIZE];
 	int client_s;
+	int choosing = 1;
 	client_s = *((int *)session_index);
-	printf("session %d__fd__%d\n", client_s, clients_struct[client_s].sockfd);
-	
+	printf("client_s %d__sockfd__%d___index is %d\n", client_s, clients_struct[client_s].sockfd, clients_struct[client_s].index);
 	bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
+	while(choosing){
+		recvd = recv(clients_struct[client_s].sockfd, buf, sizeof(buf), 0);
+		if (recvd <= 0){
+		fprintf(stderr, "choosing error!!\n");
+		break;
+	}
+	if (recvd > 0){
+		if ((strcmp(buf, "LIST")) == 0){
+			pthread_mutex_lock(&mutex);
+			list_send(&clients_struct[client_s]);
+			pthread_mutex_unlock(&mutex);
+		}
+	}
+		bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
+	}	
 	
-	while(1){
+	/*while(1){
 		recvd = recv(clients_struct[client_s].sockfd, buf, sizeof(buf), 0);
 		printf("%d", recvd);
 		
@@ -82,8 +127,7 @@ void *threads_handler(void * session_index) //только отправка со
 			pthread_mutex_unlock(&mutex);
 		}
 		bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
-	}
-	
+	}*/
 		close(clients_struct[client_s].sockfd);
 		clients_struct[client_s].sockfd = -1;
 		pthread_exit(NULL);		
@@ -127,7 +171,7 @@ int main(int argc, char *argv[])
 	
 	initial_sessions();
 	while(1){
-		cur_index = search_availiable();
+		cur_index = search_available();
 		if ((connection = accept(sock, (struct sockaddr *)&client, &len)) > 0){
 			clients_struct[cur_index].sockfd = connection;
 			printf("we got client: IP %s___assign to session %d__\n", inet_ntoa(client.sin_addr),
