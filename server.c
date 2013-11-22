@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #define BUF_SIZE 1024
 #define MAX 15
@@ -63,7 +64,7 @@ int list_send(clients_t *my_client)
 	int save_all;
 	int i, len, count = 0;
 	char buf_list[BUF_SIZE];
-	save_all = open("save", O_WRONLY);
+	save_all = creat("save", S_IRUSR|S_IWUSR|S_IRGRP);
 	for (i = 0; i < MAX; i++){
 		if (clients_struct[i].sockfd != -1 && clients_struct[i].partner_ID == -1 &&
 		    my_client->index != i){
@@ -75,8 +76,7 @@ int list_send(clients_t *my_client)
 	}
 	close(save_all);
 	if (count == 0){
-		len = sprintf(buf_list, "There is no available connection\n");
-		send(my_client->sockfd, buf_list, len, 0);
+		send(my_client->sockfd, "There is no available connection\n", 33, 0);
 		return 1;
 	}
 	save_all = open("save", O_RDONLY);
@@ -86,7 +86,7 @@ int list_send(clients_t *my_client)
 	return 0;
 }
 			
-void *threads_handler(void * session_index) //только отправка сообщений всем подключившимся клиентам
+void *threads_handler(void * session_index)
 {
 	int recvd ;
 	char buf[BUF_SIZE];
@@ -109,7 +109,7 @@ void *threads_handler(void * session_index) //только отправка со
 		}
 	}
 		bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
-	}	
+	}
 	
 	/*while(1){
 		recvd = recv(clients_struct[client_s].sockfd, buf, sizeof(buf), 0);
@@ -187,6 +187,7 @@ int main(int argc, char *argv[])
 		}
 		//sleep(3);
 	}
+	remove("save");	
 	close(connection);
 	close(sock);
 	return 0;
