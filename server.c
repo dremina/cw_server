@@ -85,11 +85,20 @@ int list_send(clients_t *my_client)
 	close(save_all);
 	return 0;
 }
+
+void clients_choise_handler(clients_t *me, int choise)
+{
+	clients_struct[choise].partner_ID = me->sockfd;
+	me->partner_ID = clients_struct[choise].sockfd;
+	printf("мой sockfd у моего партнера_%d sock моего партнера_%d\n\n", clients_struct[choise].partner_ID, me->partner_ID);
+}
+	
 			
 void *threads_handler(void * session_index)
 {
-	int recvd ;
+	int recvd, choise;
 	char buf[BUF_SIZE];
+	char convert[2];
 	int client_s;
 	int choosing = 1;
 	client_s = *((int *)session_index);
@@ -101,18 +110,26 @@ void *threads_handler(void * session_index)
 		fprintf(stderr, "choosing error!!\n");
 		break;
 	}
-	if (recvd > 0){
-		if ((strcmp(buf, "LIST")) == 0){
-			pthread_mutex_lock(&mutex);
-			list_send(&clients_struct[client_s]);
-			pthread_mutex_unlock(&mutex);
+		if (recvd > 0){
+			if ((strcmp(buf, "LIST")) == 0){
+				pthread_mutex_lock(&mutex);
+				list_send(&clients_struct[client_s]);
+				pthread_mutex_unlock(&mutex);
+			}
+			if ((strncmp("CH ", buf, 3)) == 0){
+				convert[0] = buf[3];
+				convert[1] = '\0';
+				choise = atoi(convert);
+				pthread_mutex_lock(&mutex);
+				clients_choise_handler(&clients_struct[client_s], choise);
+				pthread_mutex_unlock(&mutex);
+				break;
+			}
+			bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
 		}
-	}
-		bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
-	}
-	
-	/*while(1){
-		recvd = recv(clients_struct[client_s].sockfd, buf, sizeof(buf), 0);
+	}/*
+	while(1){
+		recvd = recv(clients_struct[client_s].partner_ID, buf, sizeof(buf), 0);
 		printf("%d", recvd);
 		
 		if (recvd <= 0){
@@ -121,16 +138,18 @@ void *threads_handler(void * session_index)
 		}	
 		if (recvd > 0){
 			printf("\n");
-			printf("got it__%s__from__%d\n", buf, clients_struct[client_s].sockfd);
+			printf("got it__%s__from__%d\n", buf, clients_struct[client_s].partner_ID);
 			pthread_mutex_lock(&mutex);
-			send_to_all(&clients_struct[client_s], buf);
+			send(clients_struct[client_s].partner_ID, "hello", 5, 0);
 			pthread_mutex_unlock(&mutex);
 		}
 		bzero((char *)buf, sizeof(buf[0]) * BUF_SIZE);
 	}*/
 		close(clients_struct[client_s].sockfd);
 		clients_struct[client_s].sockfd = -1;
+		clients_struct[client_s].partner_ID = -1;
 		pthread_exit(NULL);		
+	
 }
 
 int main(int argc, char *argv[])
