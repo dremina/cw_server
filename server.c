@@ -17,6 +17,8 @@
 #define NAME_SIZE 20
 #define HEADER_SIZE sizeof(struct msg)
 
+enum msg_type {info, chat, game, choice, bye};
+
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct clients_description {
@@ -24,7 +26,7 @@ typedef struct clients_description {
 	pthread_t thread_ID;
 	int sockfd;
 	int partner_ID;
-	int busy;
+	char name[NAME_SIZE];
 } clients_t;
 
 clients_t clients_struct[MAX];
@@ -62,7 +64,6 @@ void initial_sessions()
 		clients_struct[i].index = i;
 		clients_struct[i].sockfd = -1;
 		clients_struct[i].partner_ID = -1;
-		clients_struct[i].busy = 1;
 	}
 }
 
@@ -82,6 +83,7 @@ int list_send(clients_t *my_client)
 	int save_all;
 	int i, len, count = 0;
 	char buf_list[BUF_SIZE];
+	char err[] = "There is no available connection\n";
 	save_all = creat("save", S_IRUSR|S_IWUSR|S_IRGRP);
 	for (i = 0; i < MAX; i++){
 		if (clients_struct[i].sockfd != -1 && clients_struct[i].partner_ID == -1 &&
@@ -93,48 +95,56 @@ int list_send(clients_t *my_client)
 		}
 	}
 	close(save_all);
-	/*if (count == 0){
-		send(my_client->sockfd, "There is no available connection\n", 33, 0);
+	if (count == 0){
+		Send_Msg(err, 33, 0, my_client->sockfd);
 		return 1;
-	}*/
+	}
 	save_all = open("save", O_RDONLY);
 	len = read(save_all, (void *)buf_list, len * count);
-	Send_Msg(buf_list, len, 0, my_client->sockfd);
+	Send_Msg(buf_list, len, choice, my_client->sockfd);
 	close(save_all);
 	return 0;
 }
 
-void clients_choise_handler(clients_t *me, int choise)
+void clients_choice_handler(clients_t *me, int cho)
 {
-	clients_struct[choise].partner_ID = me->sockfd;
-	me->partner_ID = clients_struct[choise].sockfd;
-	printf("мой sockfd у моего партнера_%d sock моего партнера_%d\n\n", 
-			clients_struct[choise].partner_ID, me->partner_ID);
-	me->busy = 0;
-	clients_struct[choise].busy = 0;
-	
+	clients_struct[cho].partner_ID = me->sockfd;
+	me->partner_ID = clients_struct[cho].sockfd;
 }
 				
 void *threads_handler(void * session_index)
 {
-	//int choise;
 	struct msg *recvd = NULL;
-	//char convert[2];
+	char convert[2];
+	int cho;
 	int client_s;
 	client_s = *((int *)session_index);
 	printf("client_s %d__sockfd__%d___index is %d\n", client_s, clients_struct[client_s].sockfd,
 		   clients_struct[client_s].index);
-	while(clients_struct[client_s].busy){
+	while(1){
 		recvd = Recv(clients_struct[client_s].sockfd);
-		if (recvd <= 0){
+		if (recvd == 0){
 		fprintf(stderr, "choosing error!!\n");
 		break;
-	}
+		}
 		if (recvd > 0){
-			if (recvd->type == 0){
+			if (recvd->type == info){
+				strcpy(clients_struct[client_s].name, recvd->buffer);
 				pthread_mutex_lock(&mutex);
 				list_send(&clients_struct[client_s]);
 				pthread_mutex_unlock(&mutex);
+			}
+			if (recvd->type == choice){
+				convert[0] = recvd->buffer[0];
+				convert[1] = '\0';
+				cho = atoi(convert);
+				pthread_mutex_lock(&mutex);
+				clients_choice_handler(&clients_struct[client_s], cho);
+				pthread_mutex_unlock(&mutex);
+			}
+			printf("___%d\n", clients_struct[client_s].partner_ID);
+			if (recvd->type == bye){
+				break;
 			}
 		}
 	}
